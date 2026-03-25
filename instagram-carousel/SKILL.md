@@ -1,13 +1,21 @@
 ---
 name: instagram-carousel
 description: >
-  Cria carrosséis de alta qualidade para o Instagram como pré-visualizações em HTML deslizáveis com slides prontos para exportação (1080x1350px PNG). Lida com todo o fluxo de trabalho: configuração da marca, texto dos slides, sistema de design visual (cores, fontes, componentes), geração de HTML e exportação baseada no Playwright. Use esta skill sempre que o usuário pedir para criar, desenhar ou gerar um carrossel do Instagram, carrossel, slides para Instagram ou qualquer post de múltiplas imagens no Instagram - mesmo que não diga explicitamente "carrossel" ou "skill". Acione também para os pedidos "criar um post com vários slides", "fazer carrossel" ou "exportar slides para o Instagram".
+  Creates high-quality Instagram carousels as swipeable HTML previews with
+  export-ready slides (1080×1350px PNG). Handles the full workflow: brand
+  setup, slide copy, visual design system (colors, fonts, components), HTML
+  generation, and Playwright-based export. Use this skill whenever the user
+  asks to create, design, or generate an Instagram carousel, carrossel,
+  slides para Instagram, or any Instagram multi-image post — even if they
+  don't explicitly say "carousel" or "skill". Also trigger for requests to
+  "create a post with multiple slides", "fazer carrossel", or "exportar slides
+  para o Instagram".
 ---
 
 # Instagram Carousel Generator
 
 Generates fully self-contained, swipeable HTML carousels where every slide is
-designed to be exported as an individual 1080x1350px PNG for Instagram.
+designed to be exported as an individual 1080×1350px PNG for Instagram.
 
 ---
 
@@ -15,19 +23,87 @@ designed to be exported as an individual 1080x1350px PNG for Instagram.
 
 Before generating, ask the user for the following (if not already provided):
 
-1. **Brand name** -- displayed on first and last slides
-2. **Instagram handle** -- shown in the IG frame header
-3. **Primary brand color** -- hex code, or describe and Claude picks one
-4. **Logo** -- SVG path, brand initial, or skip
-5. **Font preference** -- see typography table below, or specific Google Fonts
-6. **Tone** -- professional, casual, playful, bold, minimal, etc.
-7. **Images** -- profile photo, screenshots, product images, etc.
-8. **Idioma dos slides** -- default: **Portugues (BR)** unless specified otherwise
-9. **Carousel format** -- standard (7 slides) or alternate sequence (see sequences section)
+1. **Brand name** — displayed on first and last slides
+2. **Instagram handle** — shown in the IG frame header
+3. **Primary brand color** — hex code, or describe and Claude picks one
+4. **Logo** — SVG path, brand initial, or skip
+5. **Font preference** — see typography table below, or specific Google Fonts
+6. **Tone** — professional, casual, playful, bold, minimal, etc.
+7. **Images** — profile photo, screenshots, product images, etc.
+8. **Idioma dos slides** — default: **Português (BR)** unless specified otherwise
+9. **Carousel format** — standard (7 slides) or alternate sequence (see sequences section)
 
 If the user provides a website URL or brand assets, derive colors and style from those.
 
 If the user says "make me a carousel about X" without brand details, ask before generating. Don't assume defaults.
+
+---
+
+## Handling User-Provided Images
+
+**This section applies from the very first HTML generation — not only during export.**
+
+When the user provides an image file path (e.g., `/home/user/gestante.png`, `/mnt/user-data/uploads/foto.jpg`):
+
+### ⚠️ Critical Rules
+
+1. **NEVER use relative paths** (`gestante.png`) — they break in every browser context except the exact folder the HTML lives in.
+2. **NEVER use `background: url(filepath)`** — leads to 1.5MB+ base64 inline strings that crash the browser parser.
+3. **ALWAYS embed as base64 `data:` URI** — works in preview, export, and any environment.
+4. **ALWAYS generate the HTML via Python** (`Path.write_text()`) — shell heredocs interpolate `$` and backticks, corrupting base64 strings.
+
+### Step-by-step: embed an image
+
+```bash
+# 1. Check the actual file format (extension may lie)
+file /path/to/image.png
+```
+
+```python
+import base64
+from pathlib import Path
+
+# 2. Read and encode
+img_path = Path("/path/to/image.png")
+# Use "image/jpeg" if `file` command says JPEG, else "image/png"
+mime = "image/jpeg"  # or "image/png"
+b64 = base64.b64encode(img_path.read_bytes()).decode()
+data_uri = f"data:{mime};base64,{b64}"
+
+# 3. Inject into HTML template as a Python variable — never via shell
+html = f"""
+<div style="position:relative;width:100%;height:100%;">
+  <img src="{data_uri}"
+       style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;">
+  <div style="position:absolute;inset:0;background:rgba(255,255,255,0.35);z-index:1;"></div>
+  <!-- slide content goes here, z-index:2 -->
+</div>
+"""
+
+Path("/home/claude/carousel.html").write_text(html, encoding="utf-8")
+```
+
+### Image as slide background (most common use)
+
+```html
+<!-- Inside the slide div, before any content -->
+<img src="{data_uri}"
+     style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;">
+<!-- Semi-transparent overlay so text stays readable -->
+<div style="position:absolute;inset:0;background:rgba(255,255,255,0.35);z-index:1;"></div>
+<!-- All slide content must have z-index:2 or higher -->
+```
+
+For dark slides, use `rgba(0,0,0,0.45)` as the overlay instead.
+
+### Common image mistakes to avoid
+
+| Mistake | What goes wrong | Fix |
+|---------|----------------|-----|
+| `<img src="gestante.png">` | Broken image — relative path only works if HTML and image share the same folder | Always use base64 `data:` URI |
+| `background: url('data:...')` inline with 1.5MB base64 | Browser parser crash, 1.3M token context | Use `<img>` tag with `object-fit:cover` |
+| Generating HTML via shell `echo` or heredoc | `$` and backtick characters in base64 get interpolated and corrupt the string | Always use Python `Path.write_text()` |
+| Assuming `.png` extension = PNG format | File may actually be JPEG; wrong MIME type breaks rendering | Run `file` command to detect actual format |
 
 ---
 
@@ -36,8 +112,8 @@ If the user says "make me a carousel about X" without brand details, ask before 
 From the user's **single primary brand color**, generate the full 6-token palette:
 
 ```
-BRAND_PRIMARY   = {user's color}                    // Main accent -- progress bar, icons, tags
-BRAND_LIGHT     = {primary lightened ~20%}           // Secondary accent -- tags on dark, pills
+BRAND_PRIMARY   = {user's color}                    // Main accent — progress bar, icons, tags
+BRAND_LIGHT     = {primary lightened ~20%}           // Secondary accent — tags on dark, pills
 BRAND_DARK      = {primary darkened ~30%}            // CTA text, gradient anchor
 LIGHT_BG        = {warm or cool off-white}           // Light slide background (never pure #fff)
 LIGHT_BORDER    = {slightly darker than LIGHT_BG}    // Dividers on light slides
@@ -45,8 +121,8 @@ DARK_BG         = {near-black with brand tint}       // Dark slide background
 ```
 
 **Rules for deriving colors:**
-- LIGHT_BG: tinted off-white complementing the primary (warm -> warm cream, cool -> cool gray-white)
-- DARK_BG: near-black with subtle brand tint (warm -> #1A1918, cool -> #0F172A)
+- LIGHT_BG: tinted off-white complementing the primary (warm → warm cream, cool → cool gray-white)
+- DARK_BG: near-black with subtle brand tint (warm → #1A1918, cool → #0F172A)
 - LIGHT_BORDER: always ~1 shade darker than LIGHT_BG
 - Brand gradient: `linear-gradient(165deg, BRAND_DARK 0%, BRAND_PRIMARY 50%, BRAND_LIGHT 100%)`
 
@@ -67,27 +143,27 @@ Based on the user's font preference, pick a **heading font** and **body font** f
 | Rounded / friendly | Bricolage Grotesque | Bricolage Grotesque |
 
 **Font size scale (fixed across all brands):**
-- Headings: 28-34px, weight 600, letter-spacing -0.3 to -0.5px, line-height 1.1-1.15
-- Body: 14px, weight 400, line-height 1.5-1.55
+- Headings: 28–34px, weight 600, letter-spacing -0.3 to -0.5px, line-height 1.1–1.15
+- Body: 14px, weight 400, line-height 1.5–1.55
 - Tags/labels: 10px, weight 600, letter-spacing 2px, uppercase
 - Step numbers: heading font, 26px, weight 300
-- Small text: 11-12px
+- Small text: 11–12px
 
 Apply via CSS classes `.serif` (heading font) and `.sans` (body font) throughout all slides.
 
 ---
 
-## Slide 1 -- Hook Rules
+## Slide 1 — Hook Rules
 
 The first slide must stop the scroll in under 1 second. Prioritize these formats:
 
 | Hook format | Example |
 |---|---|
-| Afirmacao polemica | "Voce esta usando IA errado" |
-| Numero + beneficio | "7 ferramentas que substituem seu designer" |
-| Pergunta que doi | "Por que seus carrosseis tem 0 salvamentos?" |
+| Afirmação polêmica | "Você está usando IA errado" |
+| Número + benefício | "7 ferramentas que substituem seu designer" |
+| Pergunta que dói | "Por que seus carrosséis têm 0 salvamentos?" |
 | Resultado concreto | "Esse post gerou 4.200 seguidores em 3 dias" |
-| Inversao de expectativa | "Mais esforco no design = menos alcance" |
+| Inversão de expectativa | "Mais esforço no design = menos alcance" |
 
 **Rules:**
 - Never start with the brand name as headline
@@ -98,24 +174,24 @@ The first slide must stop the scroll in under 1 second. Prioritize these formats
 
 ## Slide Sequences
 
-### Standard (7 slides -- default)
+### Standard (7 slides — default)
 
 | # | Type | Background | Purpose |
 |---|------|------------|---------|
-| 1 | Hero | LIGHT_BG | Hook -- bold statement, logo lockup, optional watermark |
-| 2 | Problem | DARK_BG | Pain point -- what's broken, frustrating, or outdated |
-| 3 | Solution | Brand gradient | The answer -- what solves it, optional quote/prompt box |
-| 4 | Features | LIGHT_BG | What you get -- feature list with icons |
-| 5 | Details | DARK_BG | Depth -- customization, specs, differentiators |
-| 6 | How-to | LIGHT_BG | Steps -- numbered workflow or process |
-| 7 | CTA | Brand gradient | Call to action -- logo, tagline, CTA button. **No arrow. Full progress bar.** |
+| 1 | Hero | LIGHT_BG | Hook — bold statement, logo lockup, optional watermark |
+| 2 | Problem | DARK_BG | Pain point — what's broken, frustrating, or outdated |
+| 3 | Solution | Brand gradient | The answer — what solves it, optional quote/prompt box |
+| 4 | Features | LIGHT_BG | What you get — feature list with icons |
+| 5 | Details | DARK_BG | Depth — customization, specs, differentiators |
+| 6 | How-to | LIGHT_BG | Steps — numbered workflow or process |
+| 7 | CTA | Brand gradient | Call to action — logo, tagline, CTA button. **No arrow. Full progress bar.** |
 
-### Listicle (5-10 slides)
+### Listicle (5–10 slides)
 
 | # | Type | Background |
 |---|------|------------|
 | 1 | Hero | LIGHT_BG |
-| 2-N | Item N | Alternating LIGHT/DARK |
+| 2–N | Item N | Alternating LIGHT/DARK |
 | Last | CTA | Brand gradient |
 
 Use for: "X ferramentas", "X erros", "X dicas"
@@ -125,26 +201,26 @@ Use for: "X ferramentas", "X erros", "X dicas"
 | # | Type | Background |
 |---|------|------------|
 | 1 | Hero | LIGHT_BG |
-| 2 | Contexto / Por que | DARK_BG |
-| 3-5 | Passo 1, 2, 3 | Alternating |
+| 2 | Contexto / Por quê | DARK_BG |
+| 3–5 | Passo 1, 2, 3 | Alternating |
 | 6 | Resultado esperado | DARK_BG |
 | 7 | CTA | Brand gradient |
 
-### Comparacao (5 slides)
+### Comparação (5 slides)
 
 | # | Type | Background |
 |---|------|------------|
-| 1 | Hero (o que sera comparado) | LIGHT_BG |
-| 2 | Opcao A | LIGHT_BG |
-| 3 | Opcao B | DARK_BG |
+| 1 | Hero (o que será comparado) | LIGHT_BG |
+| 2 | Opção A | LIGHT_BG |
+| 3 | Opção B | DARK_BG |
 | 4 | Veredicto | Brand gradient |
 | 5 | CTA | DARK_BG |
 
 **General rules for all sequences:**
-- Start with a hook -- first slide must stop the scroll
-- End CTA on brand gradient -- no swipe arrow, progress bar at 100%
+- Start with a hook — first slide must stop the scroll
+- End CTA on brand gradient — no swipe arrow, progress bar at 100%
 - Alternate light and dark backgrounds for visual rhythm
-- Adapt sequence to topic -- not every carousel needs all slides
+- Adapt sequence to topic — not every carousel needs all slides
 
 ---
 
@@ -152,7 +228,7 @@ Use for: "X ferramentas", "X erros", "X dicas"
 
 ### Format
 - Aspect ratio: **4:5** (Instagram carousel standard)
-- Each slide is self-contained -- all UI elements baked into the image
+- Each slide is self-contained — all UI elements baked into the image
 - Alternate LIGHT_BG and DARK_BG backgrounds for visual rhythm
 
 ### Required Elements on Every Slide
@@ -183,15 +259,15 @@ function progressBar(index, total, isLightSlide) {
 }
 ```
 
-WARNING: **Important:** Always replace `BRAND_PRIMARY` with the actual hex value before rendering. Never leave it as a variable name in the HTML output.
+⚠️ **Important:** Always replace `BRAND_PRIMARY` with the actual hex value before rendering. Never leave it as a variable name in the HTML output.
 
-#### 2. Swipe Arrow (right edge -- every slide EXCEPT the last)
+#### 2. Swipe Arrow (right edge — every slide EXCEPT the last)
 
 Subtle chevron guiding the user to keep swiping. Removed on the last slide.
 
 - Position: absolute right, full height, 48px wide
-- Background: gradient fade transparent -> subtle tint
-- Chevron: 24x24 SVG, rounded strokes
+- Background: gradient fade transparent → subtle tint
+- Chevron: 24×24 SVG, rounded strokes
 - Light slides: `rgba(0,0,0,0.06)` bg, `rgba(0,0,0,0.25)` stroke
 - Dark slides: `rgba(255,255,255,0.08)` bg, `rgba(255,255,255,0.35)` stroke
 
@@ -284,7 +360,7 @@ function swipeArrow(isLightSlide) {
 - Bottom-aligned slides with progress bar: `0 36px 52px` to clear the bar
 - **Hero/CTA slides:** `justify-content: center`
 - **Content-heavy slides:** `justify-content: flex-end`
-- **Content must never overlap the progress bar** -- use `padding-bottom: 52px`
+- **Content must never overlap the progress bar** — use `padding-bottom: 52px`
 
 ---
 
@@ -300,7 +376,7 @@ When displaying in chat, wrap in an Instagram-style frame:
 
 Include pointer-based swipe/drag interaction for preview. Slides are still standalone export-ready images.
 
-**Important:** `.ig-frame` must be exactly **420px wide**. The carousel viewport is 420x525px. Do NOT change this width -- export depends on it.
+**Important:** `.ig-frame` must be exactly **420px wide**. The carousel viewport is 420×525px. Do NOT change this width — export depends on it.
 
 ---
 
@@ -308,24 +384,24 @@ Include pointer-based swipe/drag interaction for preview. Slides are still stand
 
 **Always follow this flow. Never skip to export without approval.**
 
-1. Generate the HTML preview first -- never jump directly to export
+1. Generate the HTML preview first — never jump directly to export
 2. Show the preview and ask: **"Quais slides precisam de ajuste antes de exportar?"**
-3. Fix only the mentioned slides -- never regenerate the entire carousel unless the direction fundamentally changes
+3. Fix only the mentioned slides — never regenerate the entire carousel unless the direction fundamentally changes
 4. Only proceed to export when the user explicitly confirms approval (e.g., "pode exportar", "aprovado", "ok")
 
 ---
 
 ## Exporting Slides as Instagram-Ready PNGs
 
-After the user approves the carousel preview, export each slide as an individual **1080x1350px PNG**.
+After the user approves the carousel preview, export each slide as an individual **1080×1350px PNG**.
 
 ### Critical Export Rules
 
-1. **Use Python for HTML generation** -- never use shell scripts with variable interpolation. Always use `Path.write_text()` or `open().write()`.
+1. **Use Python for HTML generation** — never use shell scripts with variable interpolation. Always use `Path.write_text()` or `open().write()`.
 
-2. **Embed images as base64** -- all user-uploaded images must be base64-encoded as `data:image/jpeg;base64,...` URIs. Check actual file format with the `file` command -- a `.png` extension may contain a JPEG.
+2. **Embed images as base64** — all user-uploaded images must be base64-encoded as `data:image/jpeg;base64,...` URIs. Check actual file format with the `file` command — a `.png` extension may contain a JPEG.
 
-3. **Keep the 420px layout width** -- use Playwright's `device_scale_factor` to scale up to 1080px output WITHOUT changing the layout viewport.
+3. **Keep the 420px layout width** — use Playwright's `device_scale_factor` to scale up to 1080px output WITHOUT changing the layout viewport.
 
 ### Export Script
 
@@ -392,7 +468,7 @@ asyncio.run(export_slides())
 
 ### Why This Works
 
-- **`device_scale_factor=2.5714`** renders at high DPI -- a 420px element becomes 1080px in the output. Layout stays at 420px.
+- **`device_scale_factor=2.5714`** renders at high DPI — a 420px element becomes 1080px in the output. Layout stays at 420px.
 - **`clip`** captures only the carousel viewport, not browser chrome.
 - **`wait_for_timeout(3000)`** gives Google Fonts time to load.
 - **`track.style.transition = 'none'`** disables swipe animation so slides snap instantly.
@@ -401,7 +477,7 @@ asyncio.run(export_slides())
 
 | Mistake | What goes wrong | Fix |
 |---------|----------------|-----|
-| Setting viewport to 1080x1350 | Layout reflows -- fonts tiny, spacing breaks | Keep viewport at 420x525, use `device_scale_factor` |
+| Setting viewport to 1080×1350 | Layout reflows — fonts tiny, spacing breaks | Keep viewport at 420×525, use `device_scale_factor` |
 | Using shell scripts to generate HTML | `$` signs and backticks get interpolated | Always use Python for HTML generation |
 | Not waiting for fonts | Headings render in fallback system fonts | `wait_for_timeout(3000)` after page load |
 | Not hiding IG frame chrome | Export includes header, dots, caption | Hide `.ig-header,.ig-dots,.ig-actions,.ig-caption` |
@@ -412,13 +488,13 @@ asyncio.run(export_slides())
 
 ## Design Principles
 
-1. **Every slide is export-ready** -- arrow and progress bar are part of the slide image
-2. **Light/dark alternation** -- creates visual rhythm across swipes
-3. **Heading + body font pairing** -- display font for impact, body for readability
-4. **Brand-derived palette** -- all colors stem from one primary, keeping everything cohesive
-5. **Progressive disclosure** -- progress bar fills and arrow guides forward
-6. **Last slide is special** -- no arrow, full progress bar, clear CTA
-7. **Consistent components** -- same tag style, list style, spacing across all slides
-8. **Content padding clears UI** -- body text never overlaps progress bar or arrow
-9. **Hook-first copy** -- Slide 1 exists to stop the scroll, not to introduce the brand
-10. **Iterate fast** -- show preview, fix specific slides, don't rebuild from scratch
+1. **Every slide is export-ready** — arrow and progress bar are part of the slide image
+2. **Light/dark alternation** — creates visual rhythm across swipes
+3. **Heading + body font pairing** — display font for impact, body for readability
+4. **Brand-derived palette** — all colors stem from one primary, keeping everything cohesive
+5. **Progressive disclosure** — progress bar fills and arrow guides forward
+6. **Last slide is special** — no arrow, full progress bar, clear CTA
+7. **Consistent components** — same tag style, list style, spacing across all slides
+8. **Content padding clears UI** — body text never overlaps progress bar or arrow
+9. **Hook-first copy** — Slide 1 exists to stop the scroll, not to introduce the brand
+10. **Iterate fast** — show preview, fix specific slides, don't rebuild from scratch
